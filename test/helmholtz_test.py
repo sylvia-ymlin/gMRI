@@ -70,22 +70,23 @@ for j, k2 in enumerate(k2testCoarse):
     normEx[j] = engine.norm(solver.solve(k2))[0]
 
 ### PLOTS
-plt.figure()
-plt.semilogy(k2testCoarse, normEx, 'o')
-plt.semilogy(k2test, normApp)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (12, 5)) # horizontal layout
+ax1.semilogy(k2testCoarse, normEx, 'o')
+ax1.semilogy(k2test, normApp)
 for app_ in app.apps:
-    plt.semilogy(app_.support, [np.min(normApp)] * app_.nsupport, 'x')
-plt.legend(["Exact", "Approx"])
-plt.xlabel("k"), plt.ylabel("||u(k)||"), plt.grid()
-plt.show()
+    ax1.semilogy(app_.support, [np.min(normApp)] * app_.nsupport, 'x')
+ax1.legend(["Exact", "Approx"])
+ax1.set_xlabel("k"), ax1.set_ylabel("||u(k)||"), ax1.grid()
+ax1.set_title("Solution norm")
 
 symbols = "x+.1234"
-plt.figure()
-plt.plot(polesEx, [0] * len(polesEx), 'o')
+ax2.plot(polesEx, [0] * len(polesEx), 'o')
 for j, poles_ in enumerate(poles):
-    plt.plot(np.real(poles_), np.imag(poles_), symbols[j % len(symbols)])
-plt.legend(["Exact"])
-plt.xlabel("Re(poles)"), plt.ylabel("Im(poles)")
-plt.xlim(k2s), plt.ylim(-.5, .5), plt.grid()
-plt.show()
+    ax2.plot(np.real(poles_), np.imag(poles_), symbols[j % len(symbols)])
+ax2.legend(["Exact"])
+ax2.set_xlabel("Re(poles)"), ax2.set_ylabel("Im(poles)")
+ax2.set_xlim(k2s), ax2.set_ylim(-.5, .5), ax2.grid()
+ax2.set_title("Poles")
 
+fig.tight_layout()
+plt.show()
