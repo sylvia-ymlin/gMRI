@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.linalg import eigvals
+from scipy.linalg import eigvals, solve_triangular
 from .sampling_engine import samplingEngine
 from .bisection import convexHullWithDistance
 
@@ -93,7 +93,15 @@ class barycentricRationalFunction:
         if ders[0] >= ders[1]: dxm1[xInfinite] = 1.
         den = dxm1 ** (1 + ders[1]) @ self.coeffs
         if only_den: return den
+        # at support points z_j return the sample itself (as in AAA), so that
+        # q_j = 0 gives the stored value instead of 0/0 = NaN
+        hit_supp = (sum(ders) == 0
+                and self.sampler.Rfactor.shape[1] == self.nsupport)
+        if hit_supp:
+            i_hit, j_hit = np.nonzero(xInfinite)
+            den[i_hit] = 1.
         val = num / den * (1 - 2 * (sum(ders) % 2))
+        if hit_supp: val[:, i_hit] = self.sampler.Rfactor[:, j_hit]
         if mult == "snaps_ortho": val = self.sampler.samples_ortho.dot(val)
         return val
 
@@ -245,7 +253,7 @@ class barycentricRationalFunctionMulti:
 
 class MRI(barycentricRationalFunction):
     def __init__(self, sampler, energy_matrix, supp, eps_stab = None,
-                 starting_sampler_data = None):
+                 starting_sampler_data = None, normalization = "euclidean"):
         """
         Initialize minimal rational interpolant.
 
@@ -255,7 +263,10 @@ class MRI(barycentricRationalFunction):
             eps_stab(optional): tolerance for SVD stability check; defaults to
                 None, i.e., no stability check;
             starting_sampler_data(optional): dict with keyword arguments for
-                loading precomputed samples in samplingEngine.
+                loading precomputed samples in samplingEngine;
+            normalization(optional): normalization of the denominator,
+                "euclidean" (||q||_2 = 1) or "monic" (leading coefficient of Q,
+                i.e., sum_j q_j, equal to 1); defaults to "euclidean".
         """
         self.sampler = samplingEngine(sampler, energy_matrix)
         if starting_sampler_data is not None and len(starting_sampler_data):
@@ -263,20 +274,35 @@ class MRI(barycentricRationalFunction):
         else:
             self.sampler.iterSample(supp)
         self.eps_stab = eps_stab
+        self.normalization = normalization.lower()
+        assert self.normalization in ["euclidean", "monic"]
 
     def build(self, supp):
         """
         Build barycentric form using MRI, based on the sampled data.
 
+        Euclidean:  q = last right singular vector of R.
+        Monic:      min ||R q||  s.t.  1^T q = 1, i.e.
+                    q = (R^H R)^{-1} 1 / (1^T (R^H R)^{-1} 1),
+                    computed as R^H w = 1, R x = w, q = x / ||w||^2.
+
         Args:
             supp: support points (vector).
         """
-        _, sigma, Vh = np.linalg.svd(self.sampler.Rfactor)
-        coeffs = Vh[-1, :].conj()
-        self.setBarycentric(supp, coeffs, (self.sampler.Rfactor * coeffs).T)
-        if (self.eps_stab is not None
-        and sigma[-2] - sigma[-1] < self.eps_stab * sigma[0]):
-            raise StabilityError("MRI stability check fail")
+        R = self.sampler.Rfactor
+        if self.normalization == "euclidean":
+            _, sigma, Vh = np.linalg.svd(R)
+            coeffs = Vh[-1, :].conj()
+            unstable = (self.eps_stab is not None
+                    and sigma[-2] - sigma[-1] < self.eps_stab * sigma[0])
+        else:
+            ones = np.ones(R.shape[1], dtype = R.dtype)
+            w = solve_triangular(R, ones, trans = "C", lower = False)
+            x = solve_triangular(R, w, lower = False)
+            coeffs = x / np.vdot(w, w).real
+            unstable = False
+        self.setBarycentric(supp, coeffs, (R * coeffs).T)
+        if unstable: raise StabilityError("MRI stability check fail")
 
 
 class gMRI(MRI):
@@ -296,6 +322,7 @@ class gMRI(MRI):
         if starting_sampler_data is not None and len(starting_sampler_data):
             self.sampler.load(**starting_sampler_data)
         self.eps_stab = eps_stab
+        self.normalization = "euclidean"
 
     def build(self, test_points, tol, nmax = 1000, track_indicator = False):
         """
