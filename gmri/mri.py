@@ -291,10 +291,7 @@ class MRI(barycentricRationalFunction):
         """
         R = self.sampler.Rfactor
         if self.normalization == "euclidean":
-            _, sigma, Vh = np.linalg.svd(R)
-            coeffs = Vh[-1, :].conj()
-            unstable = (self.eps_stab is not None
-                    and sigma[-2] - sigma[-1] < self.eps_stab * sigma[0])
+            coeffs, unstable = self._minSingVec(R)
         else:
             ones = np.ones(R.shape[1], dtype = R.dtype)
             w = solve_triangular(R, ones, trans = "C", lower = False)
@@ -303,6 +300,23 @@ class MRI(barycentricRationalFunction):
             unstable = False
         self.setBarycentric(supp, coeffs, (R * coeffs).T)
         if unstable: raise StabilityError("MRI stability check fail")
+
+    # abstract method to be implemented in subclasses
+    def _minSingVec(self, A):
+        """
+        Minimize ||A y|| s.t. ||y||_2 = 1 by SVD.
+
+        Args:
+            A: matrix;
+
+        Returns:
+            Last right singular vector of A, whether the SVD stability check
+                fails.
+        """
+        _, sigma, Vh = np.linalg.svd(A)
+        unstable = (self.eps_stab is not None and len(sigma) > 1
+                and sigma[-2] - sigma[-1] < self.eps_stab * sigma[0])
+        return Vh[-1, :].conj(), unstable
 
 
 class gMRI(MRI):
