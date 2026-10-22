@@ -7,6 +7,8 @@ from scipy.sparse.linalg import spsolve
 from gmri import buildMRI, buildgMRI
 from gmri.orthogonalization_engine import orthogonalizationEngine
 
+from matplotlib.patches import Rectangle
+
 print(("Test on the 'gun' nonlinear eigenvalue problem from the NLEVP "
        "collection mantained by F. Tisseur."))
 ###############################################################################
@@ -28,7 +30,12 @@ else:
     eps_stab = float(input("Input the desired stability tolerance:\n"))
 ###############################################################################
 k2s, alphas = [1.25e4, 1.125e5], [0., 108.8774]
-data = loadmat('nlevp/private/gun.mat')
+# data = loadmat('nlevp/private/gun.mat')
+
+import os 
+# load data from where this script is located
+data = loadmat(os.path.join(os.path.dirname(__file__), 'nlevp/private/gun.mat'))
+
 data_mat = {key: csc_matrix(data[key]) for key in ["K", "M", "W1", "W2"]}
 np.random.seed(42)
 rhs = np.random.randn(data_mat["K"].shape[0])
@@ -67,20 +74,41 @@ for j, k2 in enumerate(k2testCoarse):
     normEx[j] = engine.norm(solve(k2))[0]
 
 ### PLOTS
-plt.figure()
-plt.semilogy(k2testCoarse, normEx, 'o')
-plt.semilogy(k2test, normApp)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (12, 5)) # horizontal layout
+ax1.semilogy(k2testCoarse, normEx, 'o')
+ax1.semilogy(k2test, normApp)
 for app_ in app.apps:
-    plt.semilogy(app_.support, [np.min(normApp)] * app_.nsupport, 'x')
-plt.legend(["Exact", "Approx"])
-plt.xlabel("k"), plt.ylabel("||u(k)||"), plt.grid()
-plt.show()
+    ax1.semilogy(app_.support, [np.min(normApp)] * app_.nsupport, 'x')
+ax1.legend(["Exact", "Approx"])
+ax1.set_xlabel("k"), ax1.set_ylabel("||u(k)||"), ax1.grid()
+ax1.set_xlabel("k"), ax1.set_ylabel("||u(k)||"), ax1.grid()
+ax1.set_title("Solution norm")
 
 symbols = "x+.1234"
-plt.figure()
-for j, poles_ in enumerate(poles):
-    plt.plot(np.real(poles_), np.imag(poles_), symbols[j % len(symbols)])
-plt.xlabel("Re(poles)"), plt.ylabel("Im(poles)")
-plt.xlim(k2s), plt.ylim(0, 5e4), plt.grid()
+
+delta_rel = 0.05
+
+for j, (app_, p) in enumerate(zip(app.apps, poles)):
+    c = f"C{j}"
+    a, b = np.min(np.real(app_.support)), np.max(np.real(app_.support))
+    d = delta_rel * (b - a)
+    # 可信区域：Re ∈ [a, b], |Im| ≤ d
+    ax2.add_patch(Rectangle((a, -d), b - a, 2 * d, fc=c, ec=c, alpha=.15))
+    ok = (p.real >= a) & (p.real <= b) & (np.abs(p.imag) <= d)
+    ax2.plot(p[ok].real,  p[ok].imag,  symbols[j % len(symbols)], color=c)
+    ax2.plot(p[~ok].real, p[~ok].imag, symbols[j % len(symbols)], color=c, alpha=.25)
+
+# 分支割线 (-∞, α₂²] 和分支点 0, α₂²
+xl = ax2.get_xlim()
+bp = [alphas[0] ** 2, alphas[1] ** 2]
+ax2.plot([xl[0], bp[1]], [0, 0], 'k-', lw=4, alpha=.35, zorder=0, label="branch cut")
+ax2.plot(bp, [0, 0], 'k*', ms=10, label="branch points")
+ax2.set_xlim(xl)          # 画割线后恢复横轴范围，避免被拉宽
+
+ax2.legend(loc="upper right")
+ax2.set_xlabel("Re(poles)"), ax2.set_ylabel("Im(poles)"), ax2.grid()
+ax2.set_title("Poles (faded: outside trusted region)")
+
+fig.tight_layout()
 plt.show()
 

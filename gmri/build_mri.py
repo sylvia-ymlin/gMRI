@@ -1,13 +1,15 @@
 import numpy as np
 from .bisection import bisect
 from .mri import barycentricRationalFunctionMulti, MRI, gMRI, StabilityError
+from .constrained_mri import givenDegreeMRI
 
 __all__ = ['buildMRI', 'buildgMRI']
 
 
 def buildMRI(sampler, energy_matrix, zs, eps_stab = None, subdivisions = 1,
              bisections = 0, starting_sampler_data = None,
-             force_cartesian_bisection = False, is_1d = False):
+             force_cartesian_bisection = False, is_1d = False,
+             N = None, normalization = "euclidean"):
     """
     Build MRI with potential subdivisions of parameter range.
 
@@ -25,13 +27,34 @@ def buildMRI(sampler, energy_matrix, zs, eps_stab = None, subdivisions = 1,
         force_cartesian_bisection(optional): whether to force bisection along
             cartesian axes; defaults to False;
         is_1d(optional): whether sample points are on a line segment; defaults
-            to False.
+            to False;
+        N(optional): denominator degree, N <= S - 1; only without
+            subdivisions/bisections; defaults to None, i.e., N = S - 1 (no
+            degree constraint);
+        normalization(optional): normalization of the denominator, "euclidean"
+            (||q||_2 = 1) or "monic" (leading coefficient of Q equal to 1);
+            defaults to "euclidean".
 
     Returns:
         List of trained MRIs.
     """
     if subdivisions > 1 and bisections == 0: bisections = 1
+
+    # if the input is a string, convert it to an integer if possible
+    if isinstance(bisections, str):
+        if bisections.upper() == "AUTO":
+            bisections = 0
+        else:
+            try:
+                bisections = int(bisections)
+            except ValueError:
+                raise ValueError("bisections must be an integer or 'AUTO'")
+            
     if bisections > 0 and subdivisions <= 1: subdivisions = 2
+
+    if N is not None and bisections > 0:
+        raise ValueError("Fixed degree N is not supported with bisections.")
+    
     if starting_sampler_data is None: starting_sampler_data = {}
 
     zs_eff = [np.array(zs).flatten()]
@@ -45,8 +68,12 @@ def buildMRI(sampler, energy_matrix, zs, eps_stab = None, subdivisions = 1,
 
     mris = []
     for z in zs_eff: # loop over subdivisions
-        mri = MRI(sampler, energy_matrix, z, eps_stab,
-                  starting_sampler_data)
+        if N is None:
+            mri = MRI(sampler, energy_matrix, z, eps_stab,
+                      starting_sampler_data, normalization)
+        else:  # only without bisections, see above
+            mri = givenDegreeMRI(sampler, energy_matrix, z, N, eps_stab,
+                                 starting_sampler_data, normalization)
         assert mri.sampler.nsamples == len(z), "Loading stored samples not implemented"
         try:
             mri.build(z)
