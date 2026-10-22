@@ -21,6 +21,10 @@ else:
     bisections = input(("Input the desired number of bisections (the final "
                         "piecewise approximation will be supported on the "
                         "union of 2^bisections subintervals) or 'AUTO':\n"))
+    
+# If the parameter bisections is not 'AUTO', convert it to an integer
+if bisections.upper() != "AUTO": bisections = int(bisections)
+
 if len(sys.argv) > 3:
     eps_stab = float(sys.argv[3])
 else:
